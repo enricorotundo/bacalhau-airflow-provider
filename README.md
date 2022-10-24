@@ -1,5 +1,7 @@
 # Bacalhau Airflow Provider
 
+> :construction: This repo is work-in-progres
+
 Inspired by the [dbt](https://airflow.apache.org/docs/apache-airflow-providers-dbt-cloud/stable/_api/airflow/providers/dbt/cloud/index.html) provider, this is preliminary work for adding pipelines to [bacalhau](https://github.com/filecoin-project/bacalhau).
 Find the related design doc [here](https://hackmd.io/@usN-geg4Q_iFcXZ-UCZpoQ/rkW5FE3Mj).
 
