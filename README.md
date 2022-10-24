@@ -8,7 +8,7 @@ Find the related design doc [here](https://hackmd.io/@usN-geg4Q_iFcXZ-UCZpoQ/rkW
 
 ## Pre-requistes
 
-```
+```bash
 conda create --name bacalhau python=3.9
 
 conda activate bacalhau
@@ -20,3 +20,8 @@ pip install "apache-airflow==${AIRFLOW_VERSION}" --constraint "${CONSTRAINT_URL}
 ```
 
 Then install Bacalhau cli.
+
+```bash
+export PREDICTABLE_API_PORT=1
+bacalhau devstack
+```
