@@ -55,7 +55,6 @@ airflow dags test bacalhau-helloworld
 
 ## TODO
 
-- [ ] Abort if jobs fails
-- [ ] Fan out/in
+- [x] Abort if jobs fails
 - [ ] Easy UX
-
+- [ ] Fan out/in example
