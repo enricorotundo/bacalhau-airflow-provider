@@ -64,6 +64,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         # command = ['bacalhau', '--api-host=0.0.0.0', '--api-port=20000', 'docker run', '--id-only', '--wait']
         command = ['bacalhau', 'docker run', '--id-only', '--wait']
 
+        # build flags
         if self.concurrency != 1:
             command.append(f'--concurrency {self.concurrency}')
         if self.dry_run:
@@ -94,13 +95,20 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         if len(self.command) > 0:
             command.append(self.command)
         print(f'Final command: {command}')
+        
+        # execute command
         result = self.subprocess_hook.run_command(
             command=[bash_path, '-c', ' '.join(command)],
         )
+        if result.exit_code != 0:
+            raise AirflowException(f'Bash command failed. The command returned a non-zero exit code {result.exit_code}.')
+
+        # store jobid in XCom
         job_id = str(result.output)
         context["ti"].xcom_push(key="bacalhau_job_id", value=job_id)
         print(f'Job ID: {job_id}')
 
+        # store clientid in XCom
         client_id = self.subprocess_hook.run_command(
             command=[bash_path, '-c', f'bacalhau describe {str(result.output)} | yq \".ClientID\"'],
         )
@@ -108,11 +116,9 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         context["ti"].xcom_push(key="client_id", value=cli_id)
         print(f'Client ID: {cli_id}')
 
-
-        curl_cmd = f'curl --silent -X POST http://35.245.115.191:1234/results -H "Content-Type: application/json"'
-
+        # store CID in XCom
+        curl_cmd = f'curl --silent -X POST http://0.0.0.0:20000/results -H "Content-Type: application/json"'
         header = ' -d \'{"client_id":"' + cli_id + '","job_id":"' + job_id + '"}\''
-        
         print(f'CURL command: {curl_cmd + header}')
         cid = self.subprocess_hook.run_command(
             command=[bash_path, '-c', curl_cmd + header + ' | jq \".results[0].CID\"'],
