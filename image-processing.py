@@ -39,7 +39,7 @@ with DAG('bacalhau-image-processing', start_date=datetime(2021, 1, 1)) as dag:
         task_id='op2',
         image='ultralytics/yolov5:latest',
         gpu='1',
-        command='-- python detect.py --weights ../../../datasets/yolov5s.pt --source /inputs/outputs/shrunk.png --project  /outputs',
+        command='-- python detect.py --weights ../../../datasets/yolov5s.pt --source /inputs/outputs/shrunk.png --project /outputs',
         inputs="{{ task_instance.xcom_pull(task_ids='wasm', key='cid') }}",
         input_volumes=[
             'bafybeicyuddgg4iliqzkx57twgshjluo2jtmlovovlx5lmgp5uoh3zrvpm:/datasets'
