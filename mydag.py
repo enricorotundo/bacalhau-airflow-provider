@@ -1,52 +1,89 @@
 from datetime import datetime
+from email.mime import base
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
-from bacalhau.operators import BacalhauDockerRunJobOperator, BacalhauGetOperator
+from bacalhau.operators import BacalhauDockerRunJobOperator, BacalhauGetOperator, resolve_internal_path
 
 
 with DAG('bacalhau-helloworld', start_date=datetime(2021, 1, 1)) as dag:
 
-    firs_sum = BacalhauDockerRunJobOperator(
-        task_id='firs_sum',
+    number_generator_1 = BashOperator(
+        task_id='number_generator_1',
+        bash_command='jot -r 1 0 10000  | ipfs --api '
+                     '{{ dag_run.conf["ipfs_address"] }}'
+                     ' add --quiet --stdin-name "${EPOCHREALTIME/./}.txt"',
+    )
+
+    number_generator_2 = BashOperator(
+        task_id='number_generator_2',
+        bash_command='jot -r 1 0 10000  | ipfs --api '
+                     '{{ dag_run.conf["ipfs_address"] }}'
+                     ' add --quiet --stdin-name "${EPOCHREALTIME/./}.txt"',
+    )
+    
+    first_sum = BacalhauDockerRunJobOperator(
+        task_id='first_sum',
         image='docker.io/winderresearch/bacalsummer:0.4',
-        # command="cat /inputs/*.txt | awk '{n += $1}; END{print n}'",
         input_volumes=[
-            'QmeBQ7h2MqEJfTJdrM7yeEYyFcdhM1LXHh2esGHTNWmq7T:/inputs/00.txt',
-            'QmRatDD9i6LxmhhaboANXk5Z41QT28Yr27dNUWdEPxkVPp:/inputs/01.txt',
+            "{{ task_instance.xcom_pull(task_ids='number_generator_1', key='return_value') }}:/inputs/01.txt",
+            "{{ task_instance.xcom_pull(task_ids='number_generator_2', key='return_value') }}:/inputs/02.txt",
         ],
     )
 
+    number_generator_3 = BashOperator(
+        task_id='number_generator_3',
+        bash_command='jot -r 1 0 10000  | ipfs --api '
+                     '{{ dag_run.conf["ipfs_address"] }}'
+                     ' add --quiet --stdin-name "${EPOCHREALTIME/./}.txt"',
+    )
+
+    number_generator_4 = BashOperator(
+        task_id='number_generator_4',
+        bash_command='jot -r 1 0 10000  | ipfs --api '
+                     '{{ dag_run.conf["ipfs_address"] }}'
+                     ' add --quiet --stdin-name "${EPOCHREALTIME/./}.txt"',
+    )
 
     second_sum = BacalhauDockerRunJobOperator(
         task_id='second_sum',
         image='docker.io/winderresearch/bacalsummer:0.4',
         input_volumes=[
-            '{{ task_instance.xcom_pull(task_ids="firs_sum", key="cid") }}:/inputs/001.txt',
-            'QmZt8BYk35FM6qSTZiti9YaJFtKaDcuetoUVArT141GUtg:/inputs/02.txt',
-            'QmasQjyyja5xK9S7qSKtfkxT48agxKmeiPKzGpjSusCabD:/inputs/03.txt',
+            "{{ task_instance.xcom_pull(task_ids='number_generator_3', key='return_value') }}:/inputs/03.txt",
+            "{{ task_instance.xcom_pull(task_ids='number_generator_4', key='return_value') }}:/inputs/04.txt",
         ],
     )
 
+    overall_sum = BacalhauDockerRunJobOperator(
+        task_id='overall_sum',
+        image='docker.io/winderresearch/bacalsummer:0.4',
+        input_volumes=[
+            '{{ task_instance.xcom_pull(task_ids="first_sum", key="cid") }}:/inputs/00.txt',
+            '{{ task_instance.xcom_pull(task_ids="second_sum", key="cid") }}:/inputs/01.txt',
+        ],
+    )
+
+    sub_path = resolve_internal_path(overall_sum)
     check_results = BacalhauDockerRunJobOperator(
         task_id='check_results',
         image='ubuntu:latest',
-        command='cat /inputs/prev-output/outputs/sum.txt',
-        input_volumes=[
-            '{{ task_instance.xcom_pull(task_ids="second_sum", key="cid") }}:/inputs/prev-output',
-        ],
+        command=f'cat /inputs/{sub_path}/sum.txt',
+        inputs='{{ task_instance.xcom_pull(task_ids="second_sum", key="cid") }}',
     )
 
-    clean_dir = BashOperator(
-        task_id='clean_dir',
-        bash_command='rm -rf /tmp/bacalhau && mkdir -p /tmp/bacalhau',
-    )
+    # output_dir = '/tmp/bacalhau'
+    # clean_dir = BashOperator(
+    #     task_id='clean_dir',
+    #     bash_command=f'rm -rf {output_dir} && mkdir -p {output_dir}',
+    # )
 
-    get_job_data = BacalhauGetOperator(
-        task_id='get_job_data',
-        bacalhau_job_id='{{ task_instance.xcom_pull(task_ids="check_results", key="bacalhau_job_id") }}',
-        output_dir='/tmp/bacalhau',
-    )
+    # get_job_data = BacalhauGetOperator(
+    #     task_id='get_job_data',
+    #     bacalhau_job_id='{{ task_instance.xcom_pull(task_ids="check_results", key="bacalhau_job_id") }}',
+    #     output_dir=f'{output_dir}',
+    # )
 
-    firs_sum >> second_sum >> check_results >> clean_dir >> get_job_data
+    [number_generator_1, number_generator_2] >> first_sum
+    [number_generator_3, number_generator_4] >> second_sum
+    [first_sum, second_sum] >> overall_sum >> check_results # >> clean_dir >> get_job_data

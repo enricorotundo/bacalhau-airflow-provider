@@ -1,24 +1,31 @@
-import os
 import shutil
-from typing import Sequence
 
 from airflow.compat.functools import cached_property
-from airflow.exceptions import AirflowException, AirflowSkipException
-from airflow.hooks.subprocess import SubprocessHook
+from airflow.exceptions import AirflowException
 from airflow.models.baseoperator import BaseOperator
 from airflow.utils.context import Context
-from airflow.utils.operator_helpers import context_to_airflow_vars
+from airflow.utils.log.logging_mixin import LoggingMixin
 
-from airflow.models import BaseOperator, BaseOperatorLink, XCom
+from airflow.models import BaseOperator
 from airflow.compat.functools import cached_property
 from bacalhau.hooks import BacalhauHook
+
+import logging
+
+def resolve_internal_path(task):
+    if len(task.output_volumes) == 0:
+        return 'outputs'
+    else:
+        return task.output_volumes
 
 class BacalhauDockerRunJobOperator(BaseOperator):
     """
     This operator is a wrapper around the ``Bacalhau run`` command line tool.
     It allows you to run a Bacalhau job in a docker container.
     """
-
+    ui_color = "#FFF9DA"
+    ui_fgcolor = "#04206F"
+    custom_operator_name = "BacalhauDockerRun"
     template_fields = (
         'image',
         'command',
@@ -40,7 +47,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         gpu = '',
         input_urls = [],
         input_volumes = [],
-        inputs = [],
+        inputs = "",
         output_volumes = [],
         publisher = 'estuary',
         workdir = '',
@@ -80,9 +87,8 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         if len(self.input_volumes) > 0:
             for volume in self.input_volumes:
                 command.append(f'--input-volumes {volume}')
-        if len(self.inputs) > 0:
-            for input in self.inputs:
-                command.append(f'--inputs {input}')
+        if self.inputs != "":
+            command.append(f'--inputs {self.inputs}')
         if len(self.output_volumes) > 0:
             for volume in self.output_volumes:
                 command.append(f'--output-volumes {volume}')
@@ -106,7 +112,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         # store jobid in XCom
         job_id = str(result.output)
         context["ti"].xcom_push(key="bacalhau_job_id", value=job_id)
-        print(f'Job ID: {job_id}')
+        # print(f'Job ID: {job_id}')
 
         # store clientid in XCom
         client_id = self.subprocess_hook.run_command(
@@ -114,19 +120,24 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         )
         cli_id = str(client_id.output)
         context["ti"].xcom_push(key="client_id", value=cli_id)
-        print(f'Client ID: {cli_id}')
+        # print(f'Client ID: {cli_id}')
 
         # store CID in XCom
+        # curl_cmd = f'curl --silent -X POST http://0.0.0.0:20000/results -H "Content-Type: application/json"'
         curl_cmd = f'curl --silent -X POST http://0.0.0.0:20000/results -H "Content-Type: application/json"'
         header = ' -d \'{"client_id":"' + cli_id + '","job_id":"' + job_id + '"}\''
-        print(f'CURL command: {curl_cmd + header}')
+        # print(f'CURL command: {curl_cmd + header}')
         cid = self.subprocess_hook.run_command(
             command=[bash_path, '-c', curl_cmd + header + ' | jq \".results[0].CID\"'],
         )
         cid_output = str(cid.output).replace('"', '')
         context["ti"].xcom_push(key="cid", value=cid_output)
-        print(f'CID: {cid_output}')
+        # print(f'CID: {cid_output}')
 
+        # LoggingMixin().log.info(result.output)
+        # logging.info('*********')
+        print(result.output)
+        
         return result.output
 
     def on_kill(self) -> None:
@@ -138,7 +149,6 @@ class BacalhauGetOperator(BaseOperator):
     This operator is a wrapper around the ``bacalhau get`` command line tool.
     It allows you to download the artifacts of a Bacalhau job to a local directory.
     """
-
     template_fields = (
         'bacalhau_job_id',
     )
