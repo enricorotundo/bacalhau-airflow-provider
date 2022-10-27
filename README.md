@@ -54,9 +54,3 @@ ipfs --api ${BACALHAU_IPFS_0} add ./test-data/numbers-03.txt
 ...
 airflow dags test bacalhau-helloworld
 ```
-
-## TODO
-
-- [x] Abort if jobs fails
-- [ ] Easy UX
-- [ ] Fan out/in example
