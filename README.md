@@ -30,11 +30,11 @@ Then install:
 * Docker Engine
 * IPFS cli
 
+## Run pipeline
+
 ```bash
 PREDICTABLE_API_PORT=1 LOG_LEVEL=debug bacalhau devstack
 ```
-
-## Run pipeline
 
 ```bash
 export AIRFLOW_HOME=~/airflow
