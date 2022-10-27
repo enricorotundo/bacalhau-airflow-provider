@@ -30,7 +30,7 @@ Then install:
 * Docker Engine
 * IPFS cli
 
-## Run pipeline
+## Run services
 
 ```bash
 PREDICTABLE_API_PORT=1 LOG_LEVEL=debug bacalhau devstack
@@ -44,13 +44,8 @@ airflow standalone
 
 http://0.0.0.0:8080
 
+## Run pipeline
 
 ```bash
-export BACALHAU_IPFS_0=/ip4/0.0.0.0/tcp/54979/p2p/QmeTsxTdejRqqoLuTV3ffbbHEZRbywkyuiXVP6azudiJRx
-ipfs --api ${BACALHAU_IPFS_0} add ./test-data/numbers-00.txt
-ipfs --api ${BACALHAU_IPFS_0} add ./test-data/numbers-01.txt
-ipfs --api ${BACALHAU_IPFS_0} add ./test-data/numbers-02.txt
-ipfs --api ${BACALHAU_IPFS_0} add ./test-data/numbers-03.txt
-...
-airflow dags test bacalhau-helloworld
+airflow dags test --conf '{"ipfs_address":"${BACALHAU_IPFS_0}"}' bacalhau-integer-sum
 ```
