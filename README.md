@@ -5,7 +5,7 @@
 Inspired by the [dbt-Airflow](https://airflow.apache.org/docs/apache-airflow-providers-dbt-cloud/stable/_api/airflow/providers/dbt/cloud/index.html) provider, this is an exploratory effort for adding pipelines to [bacalhau](https://github.com/filecoin-project/bacalhau).
 Find the related design doc [here](https://hackmd.io/@usN-geg4Q_iFcXZ-UCZpoQ/rkW5FE3Mj).
 
-Tested on Bacalhau version >= 0.3.6.
+Tested on Bacalhau version >= v0.3.6.
 
 ## Pre-requistes
 
@@ -21,7 +21,7 @@ PYTHON_VERSION="$(python --version | cut -d " " -f 2 | cut -d "." -f 1-2)"
 CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
 pip install "apache-airflow==${AIRFLOW_VERSION}" --constraint "${CONSTRAINT_URL}"
 
-e
+export AIRFLOW_HOME=~/airflow
 airflow db init
 ```
 
