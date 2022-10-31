@@ -67,7 +67,6 @@ class BacalhauDockerRunJobOperator(BaseOperator):
 
     def execute(self, context: Context):
         bash_path = shutil.which("bash") or "bash"
-        # command = ['bacalhau', '--api-host=0.0.0.0', '--api-port=20000', 'docker run', '--id-only', '--wait']
         command = ['bacalhau', 'docker run', '--id-only', '--wait', '--publisher ipfs']
 
         # build flags
@@ -111,7 +110,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         # store jobid in XCom
         job_id = str(result.output)
         context["ti"].xcom_push(key="bacalhau_job_id", value=job_id)
-        # print(f'Job ID: {job_id}')
+        print(f'Job ID: {job_id}')
 
         # store clientid in XCom
         client_id = self.subprocess_hook.run_command(
@@ -119,19 +118,18 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         )
         cli_id = str(client_id.output)
         context["ti"].xcom_push(key="client_id", value=cli_id)
-        # print(f'Client ID: {cli_id}')
+        print(f'Client ID: {cli_id}')
 
         # store CID in XCom
-        # curl_cmd = f'curl --silent -X POST http://0.0.0.0:20000/results -H "Content-Type: application/json"'
         curl_cmd = f'curl --silent -X POST http://bootstrap.production.bacalhau.org:1234/results -H "Content-Type: application/json"'
         header = ' -d \'{"client_id":"' + cli_id + '","job_id":"' + job_id + '"}\''
-        # print(f'CURL command: {curl_cmd + header}')
+        print(f'CURL command: {curl_cmd + header}')
         cid = self.subprocess_hook.run_command(
-            command=[bash_path, '-c', curl_cmd + header + ' | jq \".results[0].CID\"'],
+            command=[bash_path, '-c', curl_cmd + header + ' | jq \".results[0].Data.CID\"'],
         )
         cid_output = str(cid.output).replace('"', '')
         context["ti"].xcom_push(key="cid", value=cid_output)
-        # print(f'CID: {cid_output}')
+        print(f'CID: {cid_output}')
 
         print(result.output)
         
@@ -171,7 +169,7 @@ class BacalhauWasmRunJobOperator(BaseOperator):
 
     def execute(self, context: Context):
         bash_path = shutil.which("bash") or "bash"
-        command = ['bacalhau', 'wasm run', '--id-only']
+        command = ['bacalhau', 'wasm run', '--id-only', '--publisher ipfs']
         
         command.append(self.wasm)
         command.append(self.entrypoint)
@@ -197,15 +195,14 @@ class BacalhauWasmRunJobOperator(BaseOperator):
         )
         cli_id = str(client_id.output)
         context["ti"].xcom_push(key="client_id", value=cli_id)
-        # print(f'Client ID: {cli_id}')
+        print(f'Client ID: {cli_id}')
 
         # store CID in XCom
-        # curl_cmd = f'curl --silent -X POST http://0.0.0.0:20000/results -H "Content-Type: application/json"'
         curl_cmd = f'curl --silent -X POST http://bootstrap.production.bacalhau.org:1234/results -H "Content-Type: application/json"'
         header = ' -d \'{"client_id":"' + cli_id + '","job_id":"' + job_id + '"}\''
-        # print(f'CURL command: {curl_cmd + header}')
+        print(f'CURL command: {curl_cmd + header}')
         cid = self.subprocess_hook.run_command(
-            command=[bash_path, '-c', curl_cmd + header + ' | jq \".results[0].CID\"'],
+            command=[bash_path, '-c', curl_cmd + header + ' | jq \".results[0].Data.CID\"'],
         )
         cid_output = str(cid.output).replace('"', '')
         context["ti"].xcom_push(key="cid", value=cid_output)
