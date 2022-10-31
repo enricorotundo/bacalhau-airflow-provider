@@ -49,3 +49,7 @@ airflow dags test bacalhau-integer-sum
 ```
 
 Head over to http://0.0.0.0:8080 to inspect the running dags.
+
+### Questions?
+
+If you have any questions or feedback, please reach out to `enricorotundo` on the `#bacalhau` channel in [Filecoin Slack](https://filecoin.io/slack).
