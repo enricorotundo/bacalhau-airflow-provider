@@ -5,13 +5,13 @@ from airflow.operators.bash import BashOperator
 from bacalhau.operators import BacalhauDockerRunJobOperator, BacalhauGetOperator, resolve_internal_path, BacalhauWasmRunJobOperator
 
 
-with DAG('bacalhau-image-processing', start_date=datetime(2021, 1, 1)) as dag:
+with DAG('bacalhau-image-processing-gpu', start_date=datetime(2021, 1, 1)) as dag:
 
     op1 = BacalhauDockerRunJobOperator(
         task_id='op1',
         image='ghcr.io/bacalhau-project/examples/stable-diffusion-gpu:0.0.1',
         gpu='1',
-        command='-- python main.py --o ./outputs --p "two people walking in a desert"',
+        command='python main.py --o ./outputs --p "two people walking in a desert"',
     )
 
     get_1 = BacalhauGetOperator(
@@ -39,7 +39,7 @@ with DAG('bacalhau-image-processing', start_date=datetime(2021, 1, 1)) as dag:
         task_id='op2',
         image='ultralytics/yolov5:latest',
         gpu='1',
-        command='-- python detect.py --weights ../../../datasets/yolov5s.pt --source /inputs/outputs/shrunk.png --project /outputs',
+        command='python detect.py --weights ../../../datasets/yolov5s.pt --source /inputs/outputs/shrunk.png --project /outputs',
         inputs="{{ task_instance.xcom_pull(task_ids='wasm', key='cid') }}",
         input_volumes=[
             'bafybeicyuddgg4iliqzkx57twgshjluo2jtmlovovlx5lmgp5uoh3zrvpm:/datasets'

@@ -1,15 +1,16 @@
 import shutil
+import os
 
 from airflow.compat.functools import cached_property
 from airflow.exceptions import AirflowException
 from airflow.models.baseoperator import BaseOperator
 from airflow.utils.context import Context
-from airflow.utils.log.logging_mixin import LoggingMixin
 
 from airflow.models import BaseOperator
 from airflow.compat.functools import cached_property
 from bacalhau.hooks import BacalhauHook
 
+wasm_path = '/Users/enricorotundo/winderresearch/ProtocolLabs/bacalhau-airflow-provider/rust-wasm/seam-carving/target/wasm32-wasi/release/my-program.wasm'
 
 def resolve_internal_path(task):
     if len(task.output_volumes) == 0:
@@ -97,7 +98,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
 
         command.append(self.image)
         if len(self.command) > 0:
-            command.append(self.command)
+            command.append('-- ' + self.command)
         print(f'Final command: {command}')
         
         # execute command
@@ -121,7 +122,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         print(f'Client ID: {cli_id}')
 
         # store CID in XCom
-        curl_cmd = f'curl --silent -X POST http://bootstrap.production.bacalhau.org:1234/results -H "Content-Type: application/json"'
+        curl_cmd = f'curl --silent -X POST {os.getenv("BACALHAU_API_HOST")}:1234/results -H "Content-Type: application/json"'
         header = ' -d \'{"client_id":"' + cli_id + '","job_id":"' + job_id + '"}\''
         print(f'CURL command: {curl_cmd + header}')
         cid = self.subprocess_hook.run_command(
@@ -198,7 +199,7 @@ class BacalhauWasmRunJobOperator(BaseOperator):
         print(f'Client ID: {cli_id}')
 
         # store CID in XCom
-        curl_cmd = f'curl --silent -X POST http://bootstrap.production.bacalhau.org:1234/results -H "Content-Type: application/json"'
+        curl_cmd = f'curl --silent -X POST {os.getenv("BACALHAU_API_HOST")}:1234/results -H "Content-Type: application/json"'
         header = ' -d \'{"client_id":"' + cli_id + '","job_id":"' + job_id + '"}\''
         print(f'CURL command: {curl_cmd + header}')
         cid = self.subprocess_hook.run_command(

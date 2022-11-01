@@ -6,9 +6,10 @@ use imageproc::seam_carving::*;
 use std::path::Path;
 
 fn main() {
+    let input_path = "inputs/image0.JPG";
     // let input_path = "stable-diffusion/outputs/image0.png";
     // let input_path = "inputs/image0.png";
-    let input_path = "inputs/outputs/image0.png";
+    // let input_path = "inputs/outputs/image0.png";
     // let input_path = "image0.png";
     let output_dir = "outputs/";
 
