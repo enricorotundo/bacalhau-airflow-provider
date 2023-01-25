@@ -1,5 +1,6 @@
 import shutil
 import os
+from typing import List
 
 from airflow.compat.functools import cached_property
 from airflow.exceptions import AirflowException
@@ -8,7 +9,9 @@ from airflow.utils.context import Context
 
 from airflow.models import BaseOperator, TaskInstance
 from airflow.compat.functools import cached_property
+from attr import attr
 from openlineage.airflow.extractors.base import OperatorLineage
+from openlineage.client.facet import BaseFacet
 from openlineage.client.run import Dataset
 
 from bacalhau.hooks import BacalhauHook
@@ -108,7 +111,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         if len(self.command) > 0:
             command.append('-- ' + self.command)
         print(f'Final command: {command}')
-        
+
         # execute command
         result = self.subprocess_hook.run_command(
             command=[bash_path, '-c', ' '.join(command)],
@@ -144,7 +147,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         print(f'CID: {cid_output}')
 
         print(result.output)
-        
+
         return result.output
 
     def on_kill(self) -> None:
@@ -209,16 +212,33 @@ class BacalhauDockerRunJobOperator(BaseOperator):
                     namespace=f'{os.getenv("BACALHAU_API_HOST")}:1234',
                     name="outputs",
                     facets={
-                        "client_id": self.client_id,
-                        "bacalhau_job_id": self.bacalhau_job_id,
                         "cid_output": self.cid_ouput,
                     }
                 )
             ],
-            run_facets={},
-            job_facets={},
+            run_facets={
+                "bacalhau": BacalauRunFacet(self.client_id)
+            },
+            job_facets={
+                "bacalhau": BacalauJobFacet(self.bacalhau_job_id)
+            }
         )
 
+@attr.s
+class BacalauRunFacet(BaseFacet):
+    client_id: str = attr.ib()
+    _additional_skip_redact: List[str] = ['client_id']
+    def __init__(self, client_id):
+        super().__init__()
+        self.client_id = client_id
+
+@attr.s
+class BacalauJobFacet(BaseFacet):
+    job_id: str = attr.ib()
+    _additional_skip_redact: List[str] = ['job_id']
+    def __init__(self, job_id):
+        super().__init__()
+        self.job_id = job_id
 
 
 class BacalhauWasmRunJobOperator(BaseOperator):
@@ -252,10 +272,10 @@ class BacalhauWasmRunJobOperator(BaseOperator):
     def execute(self, context: Context):
         bash_path = shutil.which("bash") or "bash"
         command = ['bacalhau', 'wasm run', '--id-only', '--publisher ipfs']
-        
+
         command.append(self.wasm)
         command.append(self.entrypoint)
-        
+
         if len(self.input_volumes) > 0:
             for volume in self.input_volumes:
                 command.append(f'--input-volumes {volume}')
@@ -266,7 +286,7 @@ class BacalhauWasmRunJobOperator(BaseOperator):
         )
         if result.exit_code != 0:
             raise AirflowException(f'Bash command failed. The command returned a non-zero exit code {result.exit_code}.')
-        
+
         # store jobid in XCom
         job_id = str(result.output)
         context["ti"].xcom_push(key="bacalhau_job_id", value=job_id)
