@@ -6,9 +6,10 @@ from airflow.exceptions import AirflowException
 from airflow.models.baseoperator import BaseOperator
 from airflow.utils.context import Context
 
-from airflow.models import BaseOperator
+from airflow.models import BaseOperator, TaskInstance
 from airflow.compat.functools import cached_property
 from openlineage.airflow.extractors.base import OperatorLineage
+from openlineage.client.run import Dataset
 
 from bacalhau.hooks import BacalhauHook
 
@@ -55,6 +56,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         workdir = '',
         **kwargs) -> None:
         super().__init__(**kwargs)
+        # On start properties
         self.image = image
         self.command = command
         self.concurrency = concurrency
@@ -67,6 +69,10 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         self.output_volumes = output_volumes
         self.publisher = publisher
         self.workdir = workdir
+        # On complete properties
+        self.bacalhau_job_id = ""
+        self.client_id = ""
+        self.cid_ouput = ""
 
     def execute(self, context: Context):
         bash_path = shutil.which("bash") or "bash"
@@ -113,6 +119,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         # store jobid in XCom
         job_id = str(result.output)
         context["ti"].xcom_push(key="bacalhau_job_id", value=job_id)
+        self.bacalhau_job_id = job_id
         print(f'Job ID: {job_id}')
 
         # store clientid in XCom
@@ -121,6 +128,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         )
         cli_id = str(client_id.output)
         context["ti"].xcom_push(key="client_id", value=cli_id)
+        self.client_id = cli_id
         print(f'Client ID: {cli_id}')
 
         # store CID in XCom
@@ -132,6 +140,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         )
         cid_output = str(cid.output).replace('"', '')
         context["ti"].xcom_push(key="cid", value=cid_output)
+        self.cid_ouput = cid_output
         print(f'CID: {cid_output}')
 
         print(result.output)
@@ -146,33 +155,71 @@ class BacalhauDockerRunJobOperator(BaseOperator):
     # Implementation details can be found in Openlineage doc: https://openlineage.io/docs/integrations/airflow/operator#implementation
     # TODO this peace of code has not been tested and should be refactored before being used
     def get_openlineage_facets_on_start(self) -> OperatorLineage:
-        # INPUTS = [Dataset(namespace="database://host:port", name="inputtable")]
-        # OUTPUTS = [Dataset(namespace="database://host:port", name="inputtable")]
-        # RUN_FACETS = {
-        #     "parent": ParentRunFacet.create(
-        #         "3bb703d1-09c1-4a42-8da5-35a0b3216072", "namespace", "parentjob"
-        #     )
-        # }
-        # JOB_FACETS = {"sql": SqlJobFacet(query="SELECT * FROM inputtable")}
-        #  APIVersion, Metadata and Spec fields in the Job model (https://github.com/filecoin-project/bacalhau/blob/main/pkg/model/job.go)
-        #  ID and ClientID in Metadata, and Spec.Inputs & Spec.Outputs
         return OperatorLineage(
-            inputs=[Dataset(namespace=f'{os.getenv("BACALHAU_API_HOST")}:1234', name="inputtable")],
-            outputs=OUTPUTS,
-            run_facets=RUN_FACETS,
-            job_facets=JOB_FACETS,
+            inputs=[
+                Dataset(
+                    namespace=f'{os.getenv("BACALHAU_API_HOST")}:1234',
+                    name="inputs",
+                    facets={
+                        "command":  self.command,
+                        "concurrency":  self.concurrency,
+                        "dry_run":  self.dry_run,
+                        "env":  self.env,
+                        "gpu":  self.gpu,
+                        "input_urls":  self.input_urls,
+                        "input_volumes":  self.input_volumes,
+                        "inputs":  self.inputs,
+                        "output_volumes":  self.output_volumes,
+                        "publisher":  self.publisher,
+                        "workdir":  self.workdir
+                    }
+                )
+            ],
+            output=[],
+            run_facets={},
+            job_facets={},
         )
 
     # get_openlineage_facets_on_complete() is run by Openlineage/Marquez after the execute() funciton is run, allowing
     # to collect metadata after the execution of the task.
     # TODO this peace of code has not been tested and should be refactored before being used
-    def get_openlineage_facets_on_complete(self, task_instance) -> OperatorLineage:
+    def get_openlineage_facets_on_complete(self, task_instance: TaskInstance) -> OperatorLineage:
         return OperatorLineage(
-            inputs=INPUTS,
-            outputs=OUTPUTS,
-            run_facets=RUN_FACETS,
-            job_facets=FINISHED_FACETS,
+            inputs=[
+                Dataset(
+                    namespace=f'{os.getenv("BACALHAU_API_HOST")}:1234',
+                    name="inputs",
+                    facets={
+                        "command": self.command,
+                        "concurrency": self.concurrency,
+                        "dry_run": self.dry_run,
+                        "env": self.env,
+                        "gpu": self.gpu,
+                        "input_urls": self.input_urls,
+                        "input_volumes": self.input_volumes,
+                        "inputs": self.inputs,
+                        "output_volumes": self.output_volumes,
+                        "publisher": self.publisher,
+                        "workdir": self.workdir
+                    }
+                )
+            ],
+            outputs=[
+                Dataset(
+                    namespace=f'{os.getenv("BACALHAU_API_HOST")}:1234',
+                    name="outputs",
+                    facets={
+                        "client_id": self.client_id,
+                        "bacalhau_job_id": self.bacalhau_job_id,
+                        "cid_output": self.cid_ouput,
+                    }
+                )
+            ],
+            run_facets={},
+            job_facets={},
         )
+
+
 
 class BacalhauWasmRunJobOperator(BaseOperator):
     """
@@ -248,28 +295,6 @@ class BacalhauWasmRunJobOperator(BaseOperator):
     def on_kill(self) -> None:
         self.subprocess_hook.send_sigterm()
 
-    # get_openlineage_facets_on_start() is run by Openlineage/Marquez before the execute() funciton is run, allowing
-    # to collect metadata before the execution of the task.
-    # TODO this peace of code has not been tested and should be refactored before being used
-    def get_openlineage_facets_on_start(self) -> OperatorLineage:
-        return OperatorLineage(
-            inputs=INPUTS,
-            outputs=OUTPUTS,
-            run_facets=RUN_FACETS,
-            job_facets=JOB_FACETS,
-        )
-
-    # get_openlineage_facets_on_complete() is run by Openlineage/Marquez after the execute() funciton is run, allowing
-    # to collect metadata after the execution of the task.
-    # TODO this peace of code has not been tested and should be refactored before being used
-    def get_openlineage_facets_on_complete(self, task_instance) -> OperatorLineage:
-        return OperatorLineage(
-            inputs=INPUTS,
-            outputs=OUTPUTS,
-            run_facets=RUN_FACETS,
-            job_facets=FINISHED_FACETS,
-        )
-
 class BacalhauGetOperator(BaseOperator):
     """
     This operator is a wrapper around the ``bacalhau get`` command line tool.
@@ -315,25 +340,3 @@ class BacalhauGetOperator(BaseOperator):
 
     def on_kill(self) -> None:
         self.subprocess_hook.send_sigterm()
-
-    # get_openlineage_facets_on_start() is run by Openlineage/Marquez before the execute() funciton is run, allowing
-    # to collect metadata before the execution of the task.
-    # TODO this peace of code has not been tested and should be refactored before being used
-    def get_openlineage_facets_on_start(self) -> OperatorLineage:
-        return OperatorLineage(
-            inputs=INPUTS,
-            outputs=OUTPUTS,
-            run_facets=RUN_FACETS,
-            job_facets=JOB_FACETS,
-        )
-
-    # get_openlineage_facets_on_complete() is run by Openlineage/Marquez after the execute() funciton is run, allowing
-    # to collect metadata after the execution of the task.
-    # TODO this peace of code has not been tested and should be refactored before being used
-    def get_openlineage_facets_on_complete(self, task_instance) -> OperatorLineage:
-        return OperatorLineage(
-            inputs=INPUTS,
-            outputs=OUTPUTS,
-            run_facets=RUN_FACETS,
-            job_facets=FINISHED_FACETS,
-        )
