@@ -1,13 +1,19 @@
 import shutil
 import os
+from typing import List
 
 from airflow.compat.functools import cached_property
 from airflow.exceptions import AirflowException
 from airflow.models.baseoperator import BaseOperator
 from airflow.utils.context import Context
 
-from airflow.models import BaseOperator
+from airflow.models import BaseOperator, TaskInstance
 from airflow.compat.functools import cached_property
+from attr import attr
+from openlineage.airflow.extractors.base import OperatorLineage
+from openlineage.client.facet import BaseFacet
+from openlineage.client.run import Dataset
+
 from bacalhau.hooks import BacalhauHook
 
 wasm_path = '/Users/enricorotundo/winderresearch/ProtocolLabs/bacalhau-airflow-provider/rust-wasm/seam-carving/target/wasm32-wasi/release/my-program.wasm'
@@ -53,6 +59,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         workdir = '',
         **kwargs) -> None:
         super().__init__(**kwargs)
+        # On start properties
         self.image = image
         self.command = command
         self.concurrency = concurrency
@@ -65,6 +72,10 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         self.output_volumes = output_volumes
         self.publisher = publisher
         self.workdir = workdir
+        # On complete properties
+        self.bacalhau_job_id = ""
+        self.client_id = ""
+        self.cid_ouput = ""
 
     def execute(self, context: Context):
         bash_path = shutil.which("bash") or "bash"
@@ -100,7 +111,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         if len(self.command) > 0:
             command.append('-- ' + self.command)
         print(f'Final command: {command}')
-        
+
         # execute command
         result = self.subprocess_hook.run_command(
             command=[bash_path, '-c', ' '.join(command)],
@@ -111,6 +122,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         # store jobid in XCom
         job_id = str(result.output)
         context["ti"].xcom_push(key="bacalhau_job_id", value=job_id)
+        self.bacalhau_job_id = job_id
         print(f'Job ID: {job_id}')
 
         # store clientid in XCom
@@ -119,6 +131,7 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         )
         cli_id = str(client_id.output)
         context["ti"].xcom_push(key="client_id", value=cli_id)
+        self.client_id = cli_id
         print(f'Client ID: {cli_id}')
 
         # store CID in XCom
@@ -130,14 +143,102 @@ class BacalhauDockerRunJobOperator(BaseOperator):
         )
         cid_output = str(cid.output).replace('"', '')
         context["ti"].xcom_push(key="cid", value=cid_output)
+        self.cid_ouput = cid_output
         print(f'CID: {cid_output}')
 
         print(result.output)
-        
+
         return result.output
 
     def on_kill(self) -> None:
         self.subprocess_hook.send_sigterm()
+
+    # get_openlineage_facets_on_start() is run by Openlineage/Marquez before the execute() funciton is run, allowing
+    # to collect metadata before the execution of the task.
+    # Implementation details can be found in Openlineage doc: https://openlineage.io/docs/integrations/airflow/operator#implementation
+    # TODO this peace of code has not been tested and should be refactored before being used
+    def get_openlineage_facets_on_start(self) -> OperatorLineage:
+        return OperatorLineage(
+            inputs=[
+                Dataset(
+                    namespace=f'{os.getenv("BACALHAU_API_HOST")}:1234',
+                    name="inputs",
+                    facets={
+                        "command":  self.command,
+                        "concurrency":  self.concurrency,
+                        "dry_run":  self.dry_run,
+                        "env":  self.env,
+                        "gpu":  self.gpu,
+                        "input_urls":  self.input_urls,
+                        "input_volumes":  self.input_volumes,
+                        "inputs":  self.inputs,
+                        "output_volumes":  self.output_volumes,
+                        "publisher":  self.publisher,
+                        "workdir":  self.workdir
+                    }
+                )
+            ],
+            output=[],
+            run_facets={},
+            job_facets={},
+        )
+
+    # get_openlineage_facets_on_complete() is run by Openlineage/Marquez after the execute() funciton is run, allowing
+    # to collect metadata after the execution of the task.
+    # TODO this peace of code has not been tested and should be refactored before being used
+    def get_openlineage_facets_on_complete(self, task_instance: TaskInstance) -> OperatorLineage:
+        return OperatorLineage(
+            inputs=[
+                Dataset(
+                    namespace=f'{os.getenv("BACALHAU_API_HOST")}:1234',
+                    name="inputs",
+                    facets={
+                        "command": self.command,
+                        "concurrency": self.concurrency,
+                        "dry_run": self.dry_run,
+                        "env": self.env,
+                        "gpu": self.gpu,
+                        "input_urls": self.input_urls,
+                        "input_volumes": self.input_volumes,
+                        "inputs": self.inputs,
+                        "output_volumes": self.output_volumes,
+                        "publisher": self.publisher,
+                        "workdir": self.workdir
+                    }
+                )
+            ],
+            outputs=[
+                Dataset(
+                    namespace=f'{os.getenv("BACALHAU_API_HOST")}:1234',
+                    name="outputs",
+                    facets={
+                        "cid_output": self.cid_ouput,
+                    }
+                )
+            ],
+            run_facets={
+                "bacalhau": BacalauRunFacet(self.client_id)
+            },
+            job_facets={
+                "bacalhau": BacalauJobFacet(self.bacalhau_job_id)
+            }
+        )
+
+@attr.s
+class BacalauRunFacet(BaseFacet):
+    client_id: str = attr.ib()
+    _additional_skip_redact: List[str] = ['client_id']
+    def __init__(self, client_id):
+        super().__init__()
+        self.client_id = client_id
+
+@attr.s
+class BacalauJobFacet(BaseFacet):
+    job_id: str = attr.ib()
+    _additional_skip_redact: List[str] = ['job_id']
+    def __init__(self, job_id):
+        super().__init__()
+        self.job_id = job_id
 
 
 class BacalhauWasmRunJobOperator(BaseOperator):
@@ -171,10 +272,10 @@ class BacalhauWasmRunJobOperator(BaseOperator):
     def execute(self, context: Context):
         bash_path = shutil.which("bash") or "bash"
         command = ['bacalhau', 'wasm run', '--id-only', '--publisher ipfs']
-        
+
         command.append(self.wasm)
         command.append(self.entrypoint)
-        
+
         if len(self.input_volumes) > 0:
             for volume in self.input_volumes:
                 command.append(f'--input-volumes {volume}')
@@ -185,7 +286,7 @@ class BacalhauWasmRunJobOperator(BaseOperator):
         )
         if result.exit_code != 0:
             raise AirflowException(f'Bash command failed. The command returned a non-zero exit code {result.exit_code}.')
-        
+
         # store jobid in XCom
         job_id = str(result.output)
         context["ti"].xcom_push(key="bacalhau_job_id", value=job_id)
